@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""Terminal market countdown board."""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import os
+import select
+import shutil
+import sys
+import termios
+import time
+import tty
+from datetime import datetime
+from pathlib import Path
+
+LIB_PATH = Path(__file__).with_name("market_hours.py")
+spec = importlib.util.spec_from_file_location("market_hours", LIB_PATH)
+if spec is None or spec.loader is None:
+    raise RuntimeError(f"Could not load {LIB_PATH}")
+mh = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = mh
+spec.loader.exec_module(mh)
+
+RESET = "\033[0m"
+GREEN = "\033[32m"
+LIGHT_GREEN = "\033[92m"
+RED = "\033[31m"
+ORANGE = "\033[38;5;208m"
+TONE_ANSI = {
+    "green": GREEN,
+    "light_green": LIGHT_GREEN,
+    "orange": ORANGE,
+    "red": RED,
+}
+
+
+def use_color() -> bool:
+    return sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+
+
+def paint(text: str, color: str, enabled: bool) -> str:
+    if not enabled:
+        return text
+    return f"{color}{text}{RESET}"
+
+
+def col(text: str, width: int, color: str, enabled: bool) -> str:
+    return paint(f"{text:<{width}}", color, enabled)
+
+
+def render_board(statuses: list[mh.MarketStatus], *, now: datetime) -> str:
+    width = shutil.get_terminal_size((100, 20)).columns
+    color_enabled = use_color()
+    lines = [
+        f"{'Market':<18} {'When':<18} {'Countdown':<14} Session",
+        "-" * min(width, 64),
+    ]
+    for status in statuses:
+        remaining = status.event_at - now
+        session = f"({status.session_note})" if status.session_note else ""
+        countdown = mh.format_duration(remaining)
+        color = TONE_ANSI[mh.status_tone(status, remaining)]
+        when = status.event_at.strftime("%a %H:%M %Z")
+        lines.append(
+            f"{col(status.label, 18, color, color_enabled)}"
+            f"{col(when, 18, color, color_enabled)}"
+            f"{col(countdown, 14, color, color_enabled)}"
+            f"{paint(session, color, color_enabled)}"
+        )
+    lines.extend(["", "Press Esc to quit."])
+    return "\n".join(lines)
+
+
+class TerminalKeyReader:
+    def __init__(self) -> None:
+        self.fd = sys.stdin.fileno()
+        self.old_settings: list | None = None
+
+    def __enter__(self) -> TerminalKeyReader:
+        if sys.stdin.isatty():
+            self.old_settings = termios.tcgetattr(self.fd)
+            tty.setcbreak(self.fd)
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        if self.old_settings is not None:
+            termios.tcsetattr(self.fd, termios.TCSADRAIN, self.old_settings)
+
+    def wait(self, timeout: float) -> bool:
+        if self.old_settings is None:
+            time.sleep(timeout)
+            return False
+        if not select.select([sys.stdin], [], [], timeout)[0]:
+            return False
+        if sys.stdin.read(1) != "\x1b":
+            return False
+        while select.select([sys.stdin], [], [], 0)[0]:
+            sys.stdin.read(1)
+        return True
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Live market countdown board.")
+    parser.add_argument("--once", action="store_true")
+    args = parser.parse_args()
+
+    sessions = mh.load_market_sessions()
+    try:
+        with TerminalKeyReader() as keys:
+            while True:
+                now = datetime.now().astimezone()
+                output = render_board(mh.all_market_statuses(sessions, now=now), now=now)
+                if args.once or not sys.stdout.isatty():
+                    print(output)
+                    return 0
+                print("\033[H\033[J", end="")
+                print(output, flush=True)
+                if keys.wait(1.0):
+                    print()
+                    return 0
+    except KeyboardInterrupt:
+        print()
+        return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
