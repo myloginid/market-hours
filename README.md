@@ -68,9 +68,11 @@ python3 market_hours.py
 
 ## Build the `.app` (py2app)
 
+Use **Python 3.12–3.14** for the build venv. **Python 3.15** currently produces a broken bundle (`ModuleNotFoundError: _math_integer` at launch).
+
 ```bash
 cd /path/to/market-hours
-python3 -m venv .market-hours-venv
+python3.14 -m venv .market-hours-venv   # or python3.12 / python3.13
 source .market-hours-venv/bin/activate
 pip install py2app rumps pyobjc-framework-Cocoa pyobjc-framework-UserNotifications
 python setup_market_hours.py py2app
@@ -88,7 +90,17 @@ sudo ditto "dist/Market Hours.app" "/Applications/Market Hours.app"
 
 Quit any running instance before replacing the bundle.
 
-Current bundle version: **1.0.2** (`com.manish.market-hours`).
+Current bundle version: **1.0.3** (`com.manish.market-hours`).
+
+### Launch error (“Visit Website” / py2app dialog)
+
+If the app dies immediately, run from Terminal to see the traceback:
+
+```bash
+~/Applications/Market\ Hours.app/Contents/MacOS/Market\ Hours
+```
+
+Rebuild with Python **3.14** (not 3.15) and reinstall the `.app`.
 
 ## Notifications
 
