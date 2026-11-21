@@ -2,7 +2,7 @@
 
 Menu bar app and terminal tools that countdown global equity sessions and alert you **30 minutes before** an exchange opens or closes.
 
-Runs on macOS 13+ as a **menu bar agent** (`LSUIElement`) with an optional live terminal board.
+Runs on macOS 13+ as a **menu bar agent** (accessory activation policy; no dock icon) with an optional live terminal board.
 
 ## Features
 
@@ -70,27 +70,29 @@ python3 market_hours.py
 
 Use **Python 3.12–3.14** for the build venv. **Python 3.15** currently produces a broken bundle (`ModuleNotFoundError: _math_integer` at launch).
 
+**Easiest install** (one app, green **MKT** icon, no duplicate in `dist/`):
+
+```bash
+cd /path/to/market-hours
+./scripts/install-app.sh
+```
+
+Manual build:
+
 ```bash
 cd /path/to/market-hours
 python3.14 -m venv .market-hours-venv   # or python3.12 / python3.13
 source .market-hours-venv/bin/activate
 pip install py2app rumps pyobjc-framework-Cocoa pyobjc-framework-UserNotifications
 python setup_market_hours.py py2app
-```
-
-Install:
-
-```bash
-# User Applications (no sudo)
 ditto "dist/Market Hours.app" "$HOME/Applications/Market Hours.app"
-
-# System Applications (sudo)
-sudo ditto "dist/Market Hours.app" "/Applications/Market Hours.app"
+rm -rf "dist/Market Hours.app"   # avoid two icons in Finder
+open "$HOME/Applications/Market Hours.app"
 ```
 
-Quit any running instance before replacing the bundle.
+Launch **only** `~/Applications/Market Hours.app`. The copy under `dist/` is build output — if you leave it there, Finder shows two apps with the same name.
 
-Current bundle version: **1.0.4** (`com.manish.market-hours`).
+Current bundle version: **1.0.7** (`com.myloginid.market-hours`).
 
 ### Launch error (“Visit Website” / py2app dialog)
 
@@ -107,8 +109,9 @@ Rebuild with Python **3.14** (not 3.15) and reinstall the `.app`.
 1. Quit every copy: `pkill -x "Market Hours"`.
 2. Launch: `open ~/Applications/Market\ Hours.app` (prefer this over running the binary from Terminal).
 3. Look on the **right side** of the menu bar for the **clock icon** and **MKT** (or **MKT N** when markets are open).
-4. On recent macOS, check **Control Center → Menu Bar** in case the icon was moved to the overflow area.
-5. Inspect `~/Library/Logs/market-hours.log` — you should see `started; sessions=9 icon=True`.
+4. On **macOS 26 (Tahoe)**, open **System Settings → Menu Bar** and turn **Market Hours** on. Tahoe can hide new items until they are allow-listed (even when the app is running).
+5. Check menu bar overflow if you use Bartender or iBar.
+6. Inspect `~/Library/Logs/market-hours.log` — you should see `started; sessions=9`, `status item pinned`, and usually `menubar visibility ok`.
 
 ## Notifications
 

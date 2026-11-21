@@ -4,14 +4,16 @@ APP = ["market_menubar.py"]
 DATA_FILES = [("", ["market_hours.py", "menubar_icon.png"])]
 OPTIONS = {
     "argv_emulation": False,
-    "iconfile": "menubar_icon.png",
+    "iconfile": "app_icon.icns",
     "plist": {
         "CFBundleName": "Market Hours",
         "CFBundleDisplayName": "Market Hours",
-        "CFBundleIdentifier": "com.manish.market-hours",
-        "CFBundleShortVersionString": "1.0.4",
-        "CFBundleVersion": "1.0.4",
+        "CFBundleIdentifier": "com.myloginid.market-hours",
+        "CFBundleShortVersionString": "1.0.7",
+        "CFBundleVersion": "1.0.7",
         "LSMinimumSystemVersion": "13.0",
+        # Agent app: no Dock icon. Do not also call setActivationPolicy_(Accessory) at runtime —
+        # that combo is what breaks Tahoe's Control Center menu-bar hosting.
         "LSUIElement": True,
         "NSUserNotificationsUsageDescription": (
             "Market Hours sends alerts 30 minutes before each market opens or closes."

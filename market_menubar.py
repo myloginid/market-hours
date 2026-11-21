@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import fcntl
+import platform
 import subprocess
 import sys
 import threading
@@ -13,6 +14,7 @@ from pathlib import Path
 
 import AppKit
 import rumps
+from rumps.events import before_start
 
 _ROOT = Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
@@ -21,8 +23,9 @@ import market_hours  # noqa: E402
 
 LOCK_PATH = Path.home() / "Library/Application Support/Market Hours/.lock"
 LOG_PATH = Path.home() / "Library/Logs/market-hours.log"
-BUNDLE_ID = "com.manish.market-hours"
+BUNDLE_ID = "com.myloginid.market-hours"
 ICON_PATH = _ROOT / "menubar_icon.png"
+MENU_BAR_HELP_PATH = Path.home() / "Library/Application Support/Market Hours/menu-bar-settings-shown"
 
 
 def _log(message: str) -> None:
@@ -34,10 +37,88 @@ def _log(message: str) -> None:
         pass
 
 
-def ensure_accessory_policy() -> None:
-    """Menu bar (LSUIElement) apps must be .accessory or the status item may not appear."""
-    app = AppKit.NSApplication.sharedApplication()
-    app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
+STATUS_ITEM_AUTOSAVE = "com.myloginid.market-hours.status"
+
+
+def _macos_major() -> int:
+    try:
+        return int(platform.mac_ver()[0].split(".", maxsplit=1)[0])
+    except ValueError:
+        return 0
+
+
+def _status_item_on_menu_bar(button: object) -> bool:
+    try:
+        window = button.window()  # type: ignore[attr-defined]
+        if window is None:
+            return False
+        screen = window.screen()
+        if screen is None:
+            return False
+        frame = window.frame()
+        visible = screen.visibleFrame()
+        menu_bar_bottom = visible.origin.y + visible.size.height
+        item_top = frame.origin.y + frame.size.height
+        return abs(item_top - menu_bar_bottom) < 60
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def open_menu_bar_settings() -> None:
+    for url in (
+        "x-apple.systempreferences:com.apple.MenuBar-Settings.extension",
+        "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension",
+    ):
+        if subprocess.run(["open", url], check=False, capture_output=True).returncode == 0:
+            return
+
+
+def _maybe_show_menu_bar_onboarding() -> None:
+    if _macos_major() < 26:
+        return
+    try:
+        MENU_BAR_HELP_PATH.parent.mkdir(parents=True, exist_ok=True)
+        if MENU_BAR_HELP_PATH.exists():
+            return
+        MENU_BAR_HELP_PATH.write_text(datetime.now().isoformat(), encoding="utf-8")
+    except OSError:
+        return
+    open_menu_bar_settings()
+    rumps.alert(
+        "Where to find Market Hours",
+        "This is not the Dock (bar at the bottom).\n\n"
+        "1. System Settings → Menu Bar → Allow in the Menu Bar → Market Hours ON.\n"
+        "2. Look at the top-right of the screen (next to the clock) for MKT.\n\n"
+        "If you only see it in Settings, the allow-list was off — turn it ON and reopen the app.",
+    )
+
+
+@before_start.register
+def _pin_status_item_at_launch() -> None:
+    """macOS 26: stable autosave name + visible flag after rumps creates the status item."""
+    from rumps.rumps import App as _RumpsApp
+
+    inst = getattr(_RumpsApp, "*app_instance", None)
+    if inst is None:
+        return
+    try:
+        item = inst._nsapp.nsstatusitem
+        item.setAutosaveName_(STATUS_ITEM_AUTOSAVE)
+        item.setVisible_(True)
+        item.setImage_(None)
+        title = inst._title or "MKT"
+        item.setTitle_(title)
+        btn = item.button()
+        if btn is not None:
+            btn.setImagePosition_(AppKit.NSNoImage)
+            btn.setTitle_(title)
+            btn.setFont_(AppKit.NSFont.boldSystemFontOfSize_(13.0))
+        policy = AppKit.NSApplication.sharedApplication().activationPolicy()
+        _log(f"status item pinned title={title!r} activation_policy={policy}")
+        _maybe_show_menu_bar_onboarding()
+        rumps.Timer(inst._menubar_allowlist_hint, 3).start()
+    except Exception as exc:  # noqa: BLE001
+        _log(f"pin status item: {exc}\n{traceback.format_exc()}")
 
 
 def open_notification_settings() -> None:
@@ -168,7 +249,12 @@ def acquire_single_instance() -> None:
     try:
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError as exc:
-        rumps.alert("Market Hours is already running", "Check the menu bar for the MKT icon.")
+        rumps.alert(
+            "Market Hours is already running",
+            "Look for MKT on the right side of the menu bar.\n\n"
+            "If you do not see it: System Settings → Menu Bar → turn Market Hours ON, "
+            "then quit this duplicate (Activity Monitor → Market Hours) and open the app once.",
+        )
         raise SystemExit(0) from exc
     lock_file.write(str(Path(__file__).resolve()))
     lock_file.flush()
@@ -199,16 +285,14 @@ def menu_item_attributes(tone: str) -> dict:
 
 class MarketHoursApp(rumps.App):
     def __init__(self) -> None:
-        app_kwargs: dict[str, object] = {"title": "MKT", "quit_button": None}
-        if ICON_PATH.is_file():
-            app_kwargs["icon"] = str(ICON_PATH)
-        super().__init__("Market Hours", **app_kwargs)
+        # Text-only status item — small menu-bar PNGs often render invisible on Tahoe.
+        super().__init__("Market Hours", title="MKT", icon=None, quit_button=None)
         try:
             self.sessions = market_hours.load_market_sessions()
         except Exception as exc:  # noqa: BLE001
             rumps.alert("Market Hours failed to start", str(exc))
             raise
-        _log(f"started; sessions={len(self.sessions)} icon={ICON_PATH.is_file()}")
+        _log(f"started; sessions={len(self.sessions)} menubar=text")
         self.market_items: list[rumps.MenuItem] = []
         self.notified: set[str] = set()
         self._build_menu()
@@ -285,10 +369,31 @@ class MarketHoursApp(rumps.App):
             title, subtitle = market_hours.notification_message(status)
             send_notification(title, subtitle, status.event_at.strftime("%a %H:%M %Z"))
 
+    def _menubar_allowlist_hint(self, sender: rumps.Timer | None) -> None:
+        try:
+            if sender is not None:
+                sender.stop()
+            btn = self._nsapp.nsstatusitem.button()
+            if btn is None:
+                return
+            on_bar = _status_item_on_menu_bar(btn)
+            if not on_bar:
+                _log("status item not on menu bar (Tahoe allow-list or wrong display)")
+                open_menu_bar_settings()
+                rumps.alert(
+                    "Allow Market Hours on the menu bar",
+                    "Market Hours is running but MKT is not on the top menu bar.\n\n"
+                    "System Settings → Menu Bar → Allow in the Menu Bar → "
+                    "turn Market Hours ON.\n\n"
+                    "Use the screen where the clock/Wi‑Fi live, then quit and reopen the app.",
+                )
+            else:
+                _log("menubar item on screen menu bar")
+        except Exception as exc:  # noqa: BLE001
+            _log(f"menubar hint: {exc}")
 
 def main() -> None:
     _log("launch")
-    ensure_accessory_policy()
     acquire_single_instance()
     MarketHoursApp().run()
 
