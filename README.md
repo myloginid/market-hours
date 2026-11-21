@@ -90,7 +90,7 @@ sudo ditto "dist/Market Hours.app" "/Applications/Market Hours.app"
 
 Quit any running instance before replacing the bundle.
 
-Current bundle version: **1.0.3** (`com.manish.market-hours`).
+Current bundle version: **1.0.4** (`com.manish.market-hours`).
 
 ### Launch error (“Visit Website” / py2app dialog)
 
@@ -101,6 +101,14 @@ If the app dies immediately, run from Terminal to see the traceback:
 ```
 
 Rebuild with Python **3.14** (not 3.15) and reinstall the `.app`.
+
+### No icon in the menu bar
+
+1. Quit every copy: `pkill -x "Market Hours"`.
+2. Launch: `open ~/Applications/Market\ Hours.app` (prefer this over running the binary from Terminal).
+3. Look on the **right side** of the menu bar for the **clock icon** and **MKT** (or **MKT N** when markets are open).
+4. On recent macOS, check **Control Center → Menu Bar** in case the icon was moved to the overflow area.
+5. Inspect `~/Library/Logs/market-hours.log` — you should see `started; sessions=9 icon=True`.
 
 ## Notifications
 

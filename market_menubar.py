@@ -7,6 +7,7 @@ import fcntl
 import subprocess
 import sys
 import threading
+import traceback
 from datetime import datetime
 from pathlib import Path
 
@@ -19,7 +20,24 @@ if str(_ROOT) not in sys.path:
 import market_hours  # noqa: E402
 
 LOCK_PATH = Path.home() / "Library/Application Support/Market Hours/.lock"
+LOG_PATH = Path.home() / "Library/Logs/market-hours.log"
 BUNDLE_ID = "com.manish.market-hours"
+ICON_PATH = _ROOT / "menubar_icon.png"
+
+
+def _log(message: str) -> None:
+    try:
+        LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with LOG_PATH.open("a", encoding="utf-8") as handle:
+            handle.write(f"{datetime.now().isoformat()} {message}\n")
+    except OSError:
+        pass
+
+
+def ensure_accessory_policy() -> None:
+    """Menu bar (LSUIElement) apps must be .accessory or the status item may not appear."""
+    app = AppKit.NSApplication.sharedApplication()
+    app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
 
 
 def open_notification_settings() -> None:
@@ -181,18 +199,23 @@ def menu_item_attributes(tone: str) -> dict:
 
 class MarketHoursApp(rumps.App):
     def __init__(self) -> None:
-        super().__init__("Market Hours", title="MKT", quit_button=None)
+        app_kwargs: dict[str, object] = {"title": "MKT", "quit_button": None}
+        if ICON_PATH.is_file():
+            app_kwargs["icon"] = str(ICON_PATH)
+        super().__init__("Market Hours", **app_kwargs)
         try:
             self.sessions = market_hours.load_market_sessions()
         except Exception as exc:  # noqa: BLE001
             rumps.alert("Market Hours failed to start", str(exc))
             raise
+        _log(f"started; sessions={len(self.sessions)} icon={ICON_PATH.is_file()}")
         self.market_items: list[rumps.MenuItem] = []
         self.notified: set[str] = set()
         self._build_menu()
         self.timer = rumps.Timer(self.refresh, 1)
         self.timer.start()
         self.refresh(None)
+        self.title = self.title or "MKT"
 
     def _build_menu(self) -> None:
         self.menu.clear()
@@ -222,22 +245,29 @@ class MarketHoursApp(rumps.App):
         send_notification("Market Hours test", "Notifications are working", "🇺🇸 30-minute alerts are enabled")
 
     def refresh(self, _sender: object | None) -> None:
-        now = datetime.now().astimezone()
-        statuses = market_hours.all_market_statuses(self.sessions, now=now)
-        open_count = sum(1 for status in statuses if status.state == "OPEN")
+        try:
+            now = datetime.now().astimezone()
+            statuses = market_hours.all_market_statuses(self.sessions, now=now)
+            open_count = sum(1 for status in statuses if status.state == "OPEN")
 
-        for item, status in zip(self.market_items, statuses, strict=True):
-            remaining = status.event_at - now
-            tone = market_hours.status_tone(status, remaining)
-            text = f"   {market_hours.format_menu_line(status, now=now)}   "
-            title = AppKit.NSAttributedString.alloc().initWithString_attributes_(
-                text,
-                menu_item_attributes(tone),
-            )
-            item._menuitem.setAttributedTitle_(title)  # noqa: SLF001
+            for item, status in zip(self.market_items, statuses, strict=True):
+                remaining = status.event_at - now
+                tone = market_hours.status_tone(status, remaining)
+                text = market_hours.format_menu_line(status, now=now)
+                try:
+                    padded = f"   {text}   "
+                    title = AppKit.NSAttributedString.alloc().initWithString_attributes_(
+                        padded,
+                        menu_item_attributes(tone),
+                    )
+                    item._menuitem.setAttributedTitle_(title)  # noqa: SLF001
+                except Exception:  # noqa: BLE001
+                    item.title = text
 
-        self.title = "MKT" if open_count == 0 else f"MKT {open_count}"
-        self._check_notifications(statuses, now)
+            self.title = "MKT" if open_count == 0 else f"MKT {open_count}"
+            self._check_notifications(statuses, now)
+        except Exception as exc:  # noqa: BLE001
+            _log(f"refresh error: {exc}\n{traceback.format_exc()}")
 
     def _check_notifications(
         self,
@@ -257,6 +287,8 @@ class MarketHoursApp(rumps.App):
 
 
 def main() -> None:
+    _log("launch")
+    ensure_accessory_policy()
     acquire_single_instance()
     MarketHoursApp().run()
 

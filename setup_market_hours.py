@@ -1,16 +1,16 @@
 from setuptools import setup
 
 APP = ["market_menubar.py"]
-DATA_FILES = [("", ["market_hours.py"])]
+DATA_FILES = [("", ["market_hours.py", "menubar_icon.png"])]
 OPTIONS = {
     "argv_emulation": False,
-    "iconfile": None,
+    "iconfile": "menubar_icon.png",
     "plist": {
         "CFBundleName": "Market Hours",
         "CFBundleDisplayName": "Market Hours",
         "CFBundleIdentifier": "com.manish.market-hours",
-        "CFBundleShortVersionString": "1.0.3",
-        "CFBundleVersion": "1.0.3",
+        "CFBundleShortVersionString": "1.0.4",
+        "CFBundleVersion": "1.0.4",
         "LSMinimumSystemVersion": "13.0",
         "LSUIElement": True,
         "NSUserNotificationsUsageDescription": (
