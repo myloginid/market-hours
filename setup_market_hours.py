@@ -9,8 +9,8 @@ OPTIONS = {
         "CFBundleName": "Market Hours",
         "CFBundleDisplayName": "Market Hours",
         "CFBundleIdentifier": "com.manish.market-hours",
-        "CFBundleShortVersionString": "1.0.1",
-        "CFBundleVersion": "1.0.1",
+        "CFBundleShortVersionString": "1.0.2",
+        "CFBundleVersion": "1.0.2",
         "LSMinimumSystemVersion": "13.0",
         "LSUIElement": True,
         "NSUserNotificationsUsageDescription": (

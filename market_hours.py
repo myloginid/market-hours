@@ -55,11 +55,27 @@ MARKET_SCHEDULE: tuple[dict[str, object], ...] = (
         "start": (13, 0),
         "end": (16, 0),
     },
+    # US equity sessions in exchange local time (DST via America/New_York).
+    # In Singapore (UTC+8): when US is on EST, pre/regular/after are roughly
+    # 17:00–22:30 / 22:30–05:00+1 / 05:00+1–09:00+1 SGT; when US is on EDT, each
+    # boundary is one hour earlier in SGT.
     {
         "tz": "America/New_York",
-        "summary": "NYSE & Nasdaq — Regular Market",
+        "summary": "NYSE & Nasdaq — Pre-market",
+        "start": (4, 0),
+        "end": (9, 30),
+    },
+    {
+        "tz": "America/New_York",
+        "summary": "NYSE & Nasdaq — Regular trading",
         "start": (9, 30),
         "end": (16, 0),
+    },
+    {
+        "tz": "America/New_York",
+        "summary": "NYSE & Nasdaq — After-hours",
+        "start": (16, 0),
+        "end": (20, 0),
     },
 )
 
@@ -169,6 +185,12 @@ def close_event_label(
 
 
 def short_session_name(summary: str) -> str:
+    if "Pre-market" in summary:
+        return "pre"
+    if "Regular trading" in summary or "Regular Market" in summary:
+        return "reg"
+    if "After-hours" in summary:
+        return "after"
     if "Morning" in summary:
         return "morning"
     if "Afternoon" in summary:
@@ -256,6 +278,8 @@ def status_tone(status: MarketStatus, remaining: timedelta) -> str:
 
 def format_menu_line(status: MarketStatus, *, now: datetime) -> str:
     remaining = status.event_at - now
+    if status.session_note:
+        return f"{status.label} {status.session_note}  {format_duration(remaining)}"
     return f"{status.label}  {format_duration(remaining)}"
 
 
@@ -274,6 +298,60 @@ def should_send_notification(remaining: timedelta) -> bool:
 
 def notification_message(status: MarketStatus) -> tuple[str, str]:
     flag = status.label
+    phase = status.session_note
+    phase_text = f" ({phase})" if phase else ""
     if status.event == "opens":
-        return (f"{flag} opens in 30 minutes", "Market opening soon")
-    return (f"{flag} closes in 30 minutes", "Market closing soon")
+        return (f"{flag} opens in 30 minutes{phase_text}", "Market opening soon")
+    if status.event == "lunch":
+        return (f"{flag} lunch break in 30 minutes", "Session ending soon")
+    return (f"{flag} closes in 30 minutes{phase_text}", "Market closing soon")
+
+
+def format_session_bounds_sgt(
+    session: MarketSession,
+    *,
+    on_date: datetime,
+) -> tuple[str, str]:
+    """Human-readable start/end in Asia/Singapore for a session on its exchange calendar day."""
+    sgt = ZoneInfo("Asia/Singapore")
+    if on_date.tzinfo is None:
+        on_date = on_date.replace(tzinfo=session.tz)
+    day_local = on_date.astimezone(session.tz).replace(hour=0, minute=0, second=0, microsecond=0)
+    start, end = session_bounds(day_local, session)
+    return (
+        start.astimezone(sgt).strftime("%a %H:%M"),
+        end.astimezone(sgt).strftime("%a %H:%M"),
+    )
+
+
+def _verify_us_sgt_reference_windows() -> None:
+    """Raise AssertionError if US session edges do not match known EST/EDT SGT offsets."""
+    sgt = ZoneInfo("Asia/Singapore")
+    sessions = [s for s in load_market_sessions() if s.tz_key == "America/New_York"]
+    sessions.sort(key=lambda s: s.start)
+
+    # US standard time (EST): Monday 2026-01-12
+    winter_day = datetime(2026, 1, 12, 12, 0, tzinfo=ZoneInfo("America/New_York"))
+    winter_bounds = [format_session_bounds_sgt(s, on_date=winter_day) for s in sessions]
+    assert winter_bounds[0] == ("Mon 17:00", "Mon 22:30"), winter_bounds[0]
+    assert winter_bounds[1] == ("Mon 22:30", "Tue 05:00"), winter_bounds[1]
+    assert winter_bounds[2] == ("Tue 05:00", "Tue 09:00"), winter_bounds[2]
+
+    # US daylight time (EDT): Monday 2026-06-15
+    summer_day = datetime(2026, 6, 15, 12, 0, tzinfo=ZoneInfo("America/New_York"))
+    summer_bounds = [format_session_bounds_sgt(s, on_date=summer_day) for s in sessions]
+    assert summer_bounds[0] == ("Mon 16:00", "Mon 21:30"), summer_bounds[0]
+    assert summer_bounds[1] == ("Mon 21:30", "Tue 04:00"), summer_bounds[1]
+    assert summer_bounds[2] == ("Tue 04:00", "Tue 08:00"), summer_bounds[2]
+
+    # zoneinfo must shift NY↔SGT offset by 1h across DST (13h vs 12h)
+    pre = sessions[0]
+    w_start, _ = session_bounds(winter_day.replace(hour=0, minute=0, second=0, microsecond=0), pre)
+    s_start, _ = session_bounds(summer_day.replace(hour=0, minute=0, second=0, microsecond=0), pre)
+    assert w_start.astimezone(sgt).hour == 17
+    assert s_start.astimezone(sgt).hour == 16
+
+
+if __name__ == "__main__":
+    _verify_us_sgt_reference_windows()
+    print("US session SGT windows (EST/EDT): OK")
