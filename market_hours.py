@@ -3,11 +3,149 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, time as dt_time, timedelta
+from datetime import date, datetime, time as dt_time, timedelta
 from zoneinfo import ZoneInfo
 
 WEEKDAYS = frozenset({0, 1, 2, 3, 4})  # Mon–Fri
 THRESHOLD = timedelta(minutes=30)
+
+# Exchange-local closed days (full sessions off). Keys match MARKET_SCHEDULE tz values.
+EXCHANGE_HOLIDAYS: dict[str, frozenset[date]] = {
+    "Asia/Tokyo": frozenset(
+        {
+            # JPX / TSE — https://www.jpx.co.jp/english/corporate/about-jpx/calendar/
+            date(2026, 1, 1),
+            date(2026, 1, 2),
+            date(2026, 1, 12),
+            date(2026, 2, 11),
+            date(2026, 2, 23),
+            date(2026, 3, 20),
+            date(2026, 4, 29),
+            date(2026, 5, 4),
+            date(2026, 5, 5),
+            date(2026, 5, 6),
+            date(2026, 7, 20),
+            date(2026, 8, 11),
+            date(2026, 9, 21),
+            date(2026, 9, 22),
+            date(2026, 9, 23),
+            date(2026, 10, 12),
+            date(2026, 11, 3),
+            date(2026, 11, 23),
+            date(2026, 12, 31),
+            date(2027, 1, 1),
+            date(2027, 1, 11),
+            date(2027, 2, 11),
+            date(2027, 2, 23),
+            date(2027, 3, 22),
+            date(2027, 4, 29),
+            date(2027, 5, 3),
+            date(2027, 5, 4),
+            date(2027, 5, 5),
+            date(2027, 7, 19),
+            date(2027, 8, 11),
+            date(2027, 9, 20),
+            date(2027, 9, 23),
+            date(2027, 10, 11),
+            date(2027, 11, 3),
+            date(2027, 11, 23),
+            date(2027, 12, 31),
+        }
+    ),
+    "Asia/Seoul": frozenset(
+        {
+            # KRX — global.krx.co.kr market holiday calendar
+            date(2026, 1, 1),
+            date(2026, 2, 16),
+            date(2026, 2, 17),
+            date(2026, 2, 18),
+            date(2026, 3, 2),
+            date(2026, 5, 1),
+            date(2026, 5, 5),
+            date(2026, 5, 25),
+            date(2026, 6, 3),
+            date(2026, 7, 17),
+            date(2026, 8, 17),
+            date(2026, 9, 24),
+            date(2026, 9, 25),
+            date(2026, 10, 5),
+            date(2026, 10, 9),
+            date(2026, 12, 25),
+            date(2026, 12, 31),
+            date(2027, 1, 1),
+            date(2027, 2, 8),
+            date(2027, 2, 9),
+            date(2027, 3, 1),
+            date(2027, 5, 3),
+            date(2027, 5, 5),
+            date(2027, 5, 13),
+            date(2027, 7, 19),
+            date(2027, 8, 16),
+            date(2027, 9, 14),
+            date(2027, 9, 15),
+            date(2027, 9, 16),
+            date(2027, 10, 4),
+            date(2027, 10, 11),
+            date(2027, 12, 27),
+            date(2027, 12, 31),
+        }
+    ),
+    "Asia/Kolkata": frozenset(
+        {
+            date(2026, 1, 15),  # Municipal Corporation Election — Maharashtra
+            date(2026, 1, 26),  # Republic Day
+            date(2026, 3, 3),  # Holi
+            date(2026, 3, 26),  # Shri Ram Navami
+            date(2026, 3, 31),  # Shri Mahavir Jayanti
+            date(2026, 4, 3),  # Good Friday
+            date(2026, 4, 14),  # Dr. Baba Saheb Ambedkar Jayanti
+            date(2026, 5, 1),  # Maharashtra Day
+            date(2026, 5, 28),  # Bakri Id
+            date(2026, 6, 26),  # Muharram
+            date(2026, 9, 14),  # Ganesh Chaturthi
+            date(2026, 10, 2),  # Mahatma Gandhi Jayanti
+            date(2026, 10, 20),  # Dussehra
+            date(2026, 11, 10),  # Diwali-Balipratipada
+            date(2026, 11, 24),  # Prakash Gurpurb Sri Guru Nanak Dev
+            date(2026, 12, 25),  # Christmas
+        }
+    ),
+    "America/New_York": frozenset(
+        {
+            # 2026 — NYSE/Nasdaq full-day closures (America/New_York)
+            date(2026, 1, 1),  # New Year's Day
+            date(2026, 1, 19),  # Martin Luther King, Jr. Day
+            date(2026, 2, 16),  # Washington's Birthday
+            date(2026, 4, 3),  # Good Friday
+            date(2026, 5, 25),  # Memorial Day
+            date(2026, 6, 19),  # Juneteenth
+            date(2026, 7, 3),  # Independence Day (observed)
+            date(2026, 9, 7),  # Labor Day
+            date(2026, 11, 26),  # Thanksgiving Day
+            date(2026, 12, 25),  # Christmas Day
+            # 2027
+            date(2027, 1, 1),  # New Year's Day
+            date(2027, 1, 18),  # Martin Luther King, Jr. Day
+            date(2027, 2, 15),  # Washington's Birthday
+            date(2027, 3, 26),  # Good Friday
+            date(2027, 5, 31),  # Memorial Day
+            date(2027, 6, 18),  # Juneteenth (observed)
+            date(2027, 7, 5),  # Independence Day (observed)
+            date(2027, 9, 6),  # Labor Day
+            date(2027, 11, 25),  # Thanksgiving Day
+            date(2027, 12, 24),  # Christmas Day (observed)
+        }
+    ),
+}
+
+# NYSE early closes: regular session ends 13:00 ET; after-hours begins then.
+EXCHANGE_EARLY_CLOSE: dict[str, dict[date, dt_time]] = {
+    "America/New_York": {
+        date(2026, 11, 27): dt_time(13, 0),  # Day after Thanksgiving
+        date(2026, 12, 24): dt_time(13, 0),  # Christmas Eve
+        date(2027, 11, 26): dt_time(13, 0),  # Day after Thanksgiving
+    },
+}
 
 MARKET_META: dict[str, tuple[str, int]] = {
     "Asia/Tokyo": ("🇯🇵", 1),
@@ -129,9 +267,32 @@ def group_markets(sessions: list[MarketSession]) -> dict[str, list[MarketSession
     return grouped
 
 
+def is_exchange_holiday(on: datetime, session: MarketSession) -> bool:
+    closed = EXCHANGE_HOLIDAYS.get(session.tz_key)
+    if not closed:
+        return False
+    return on.astimezone(session.tz).date() in closed
+
+
+def effective_session_times(
+    exchange_date: date,
+    session: MarketSession,
+) -> tuple[dt_time, dt_time]:
+    start, end = session.start, session.end
+    early = EXCHANGE_EARLY_CLOSE.get(session.tz_key, {}).get(exchange_date)
+    if early is not None:
+        if "Regular trading" in session.summary:
+            end = early
+        elif "After-hours" in session.summary:
+            start = early
+    return start, end
+
+
 def session_bounds(day: datetime, session: MarketSession) -> tuple[datetime, datetime]:
-    start = datetime.combine(day.date(), session.start, tzinfo=session.tz)
-    end = datetime.combine(day.date(), session.end, tzinfo=session.tz)
+    cal = day.astimezone(session.tz).date()
+    start_t, end_t = effective_session_times(cal, session)
+    start = datetime.combine(cal, start_t, tzinfo=session.tz)
+    end = datetime.combine(cal, end_t, tzinfo=session.tz)
     if end <= start:
         end += timedelta(days=1)
     return start, end
@@ -148,9 +309,14 @@ def iter_session_windows(
     for offset in range(horizon_days + 1):
         day = (now + timedelta(days=offset)).replace(hour=0, minute=0, second=0, microsecond=0)
         for session in sessions:
-            if day.weekday() not in session.weekdays:
+            exchange_day = day.astimezone(session.tz).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            if exchange_day.weekday() not in session.weekdays:
                 continue
-            start, end = session_bounds(day, session)
+            if is_exchange_holiday(exchange_day, session):
+                continue
+            start, end = session_bounds(exchange_day, session)
             windows.append((start.astimezone(local_tz), end.astimezone(local_tz), session))
     windows.sort(key=lambda item: item[0])
     return windows
@@ -352,6 +518,58 @@ def _verify_us_sgt_reference_windows() -> None:
     assert s_start.astimezone(sgt).hour == 16
 
 
+def _verify_jpx_holidays() -> None:
+    jst = ZoneInfo("Asia/Tokyo")
+    sessions = [s for s in load_market_sessions() if s.tz_key == "Asia/Tokyo"]
+    now = datetime(2026, 11, 3, 10, 0, tzinfo=jst).astimezone()
+    status = market_status(sessions, now=now)
+    assert status.state == "CLOSED", status
+    assert status.event_at.astimezone(jst).date() == date(2026, 11, 4), status.event_at
+
+
+def _verify_krx_holidays() -> None:
+    kst = ZoneInfo("Asia/Seoul")
+    sessions = [s for s in load_market_sessions() if s.tz_key == "Asia/Seoul"]
+    now = datetime(2026, 2, 17, 10, 0, tzinfo=kst).astimezone()
+    status = market_status(sessions, now=now)
+    assert status.state == "CLOSED", status
+    assert status.event_at.astimezone(kst).date() == date(2026, 2, 19), status.event_at
+
+
+def _verify_nyse_holidays() -> None:
+    ny = ZoneInfo("America/New_York")
+    sessions = [s for s in load_market_sessions() if s.tz_key == "America/New_York"]
+    # Independence Day observed — Friday Jul 3, 2026
+    now = datetime(2026, 7, 3, 11, 0, tzinfo=ny).astimezone()
+    status = market_status(sessions, now=now)
+    assert status.state == "CLOSED", status
+    assert status.event_at.astimezone(ny).date() == date(2026, 7, 6), status.event_at
+    # Early close — day after Thanksgiving 2026, regular until 13:00 ET
+    now = datetime(2026, 11, 27, 12, 0, tzinfo=ny).astimezone()
+    status = market_status(sessions, now=now)
+    assert status.state == "OPEN", status
+    assert status.session_note == "reg", status
+    assert status.event_at.astimezone(ny).hour == 13, status.event_at
+
+
+def _verify_nse_holidays() -> None:
+    sessions = [s for s in load_market_sessions() if s.tz_key == "Asia/Kolkata"]
+    ist = ZoneInfo("Asia/Kolkata")
+    # Republic Day — no session window; next open is Tuesday.
+    now = datetime(2026, 1, 26, 10, 0, tzinfo=ist).astimezone()
+    status = market_status(sessions, now=now)
+    assert status.state == "CLOSED", status
+    assert status.event_at.astimezone(ist).date() == date(2026, 1, 27), status.event_at
+
+
 if __name__ == "__main__":
     _verify_us_sgt_reference_windows()
+    _verify_jpx_holidays()
+    _verify_krx_holidays()
+    _verify_nyse_holidays()
+    _verify_nse_holidays()
     print("US session SGT windows (EST/EDT): OK")
+    print("JPX/TSE 2026–2027 holidays: OK")
+    print("KRX 2026–2027 holidays: OK")
+    print("NYSE/Nasdaq 2026–2027 holidays: OK")
+    print("NSE 2026 holidays: OK")
